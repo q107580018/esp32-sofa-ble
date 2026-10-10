@@ -1,0 +1,15 @@
+# ESP-IDF build outputs
+build/
+
+# Generated per-developer config (intentional defaults live in sdkconfig.defaults)
+sdkconfig
+sdkconfig.old
+
+# Component manager
+managed_components/
+
+# Local captures from tools/serial_log.py
+logs/
+
+# macOS
+.DS_Store

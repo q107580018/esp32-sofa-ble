@@ -1,0 +1,221 @@
+menu "esp32-sofa-ble configuration"
+
+    config SOFA_DEVICE_NAME_PREFIX
+        string "Peripheral name prefix to connect to"
+        default "Sofa_wwt"
+        help
+            A peripheral is only connected to when its advertised name starts
+            with this. Seat count is encoded in the suffix: Sofa_wwt_01 ..
+            Sofa_wwt_04.
+
+            This mirrors the original app, which filters its scan by the 0xAE30
+            service UUID and then requires /Sofa_wwt/ in the name. Matching on
+            the service UUID *instead* of the name is tempting and wrong: other
+            devices do advertise 0xAE30, and latching onto one of those means
+            retrying a connection that never succeeds.
+
+            Set this empty to match on the service UUID alone - useful if your
+            sofa advertises a different name, or none. Any device advertising
+            0xAE30 without a matching name is logged as a warning, so set this
+            empty only after seeing that warning and meaning it.
+
+    config SOFA_TARGET_ADDR
+        string "Connect to this BLE address only (aa:bb:cc:dd:ee:ff)"
+        default "ADDR_ANY"
+        help
+            Leave as ADDR_ANY to connect to the first matching peripheral found
+            while scanning. Set a fixed address to pin the board to one sofa,
+            which is worth doing once you know it - it skips the scan step and
+            is the only way to talk to a sofa whose advertisement is filtered
+            out by something else nearby.
+
+            Use the 'sofa list' console command to discover it.
+
+    config SOFA_CONNECT_TIMEOUT_MS
+        int "Connection attempt timeout (ms)"
+        range 1000 120000
+        default 30000
+
+    config SOFA_SCAN_INTERVAL_MS
+        int "BLE scan interval (ms)"
+        range 20 10240
+        default 100
+        help
+            How often the scanner listens, in milliseconds. Together with the
+            window below this is the scan duty cycle.
+
+            The controller default (a 10 ms window every 10 ms, a scan that
+            never stops) takes airtime straight from WiFi on this single-radio
+            chip, and buys nothing: measured here, 30 ms out of every 100 ms
+            still found every advertiser in the room within about three
+            seconds, including ones 90 dB down in the noise.
+
+            Raise the interval (or lower the window) to give WiFi more room.
+            Lower it only if the sofa is genuinely hard to find.
+
+    config SOFA_SCAN_WINDOW_MS
+        int "BLE scan window (ms)"
+        range 10 10240
+        default 30
+        help
+            How long each scan interval listens for. Must not exceed the
+            interval; if it does it is clamped down to it.
+
+            The default is 30 ms out of every 100 ms - a 30% duty cycle.
+
+    config SOFA_RETRY_DELAY_MS
+        int "Delay before rescanning after a disconnect or failed connect (ms)"
+        range 0 60000
+        default 3000
+
+    config SOFA_HANDSHAKE
+        bool "Send the 'fe5a' handshake after subscribing"
+        default y
+        help
+            The original app writes fe5a to the write characteristic as soon as
+            it has connected, discovered the characteristics and subscribed to
+            notifications - before it enables any control. We do not know from
+            static analysis whether the sofa *requires* it, so mirroring the app
+            is the safe default. Turn this off to test whether it matters.
+
+    config SOFA_JOG_REPEAT_MS
+        int "Jog repeat interval (ms)"
+        range 10 1000
+        default 50
+        help
+            In jog ("点动") mode the sofa only moves while the button frame is
+            repeated. The original app resends every 50 ms while the on-screen
+            button is held.
+
+    config SOFA_ANNOUNCE_NEW_DEVICES
+        bool "Log every newly seen BLE device during a scan"
+        default y
+        help
+            Useful when hunting for the sofa's address, noisy in normal use.
+
+    config SOFA_STATUS_LED_GPIO
+        int "Status LED GPIO"
+        default 2
+        help
+            GPIO2 is this board's onboard LED. Steady on once *everything*
+            works - the sofa link is ready and, if WiFi is configured, the
+            station holds a lease. 1 Hz blink otherwise.
+
+            Both links are folded into one light on purpose: from across the
+            room the only question is "can I use this yet", and the answer is
+            unambiguous. Which half is missing is in the log and in
+            /api/status.
+
+    config SOFA_STATUS_LED_ACTIVE_LOW
+        bool "Status LED is active LOW"
+        default n
+        help
+            Measured on this specific board: GPIO2 is active HIGH, which is the
+            opposite of the usual classic-ESP32 wiring. See ../AGENTS.md.
+
+    config SOFA_HOLD_TIMEOUT_MS
+        int "Stop a held seat if nothing checks in for this long (ms)"
+        range 0 10000
+        default 800
+        help
+            Only the HTTP control page uses this. In jog mode the *firmware* is
+            what keeps re-sending the press frame, so if the phone loses WiFi,
+            the browser tab is closed, or the page is backgrounded mid-press,
+            the seat would keep moving forever. With the watchdog armed, the
+            jog releases itself unless /api/hold keeps arriving (the dashboard
+            sends it every 300 ms).
+
+            The serial console never arms it, because a person sitting at a
+            terminal is their own watchdog. Set this to 0 to disable it
+            entirely - not recommended for the web page.
+
+    # --- WiFi and the HTTP control surface ----------------------------------
+
+    config SOFA_WIFI_SSID
+        string "WiFi SSID (2.4 GHz only)"
+        default ""
+        help
+            SSID of the access point this board joins in station mode. Leave it
+            empty and the board runs BLE-only: the sofa still works and the
+            serial console still controls it, but there is no web page.
+
+            The classic ESP32 radio is 2.4 GHz only - it cannot see a 5 GHz
+            network. If your Mac is on 5 GHz and the board on 2.4 GHz they are
+            usually still on the same LAN, but some routers isolate the bands,
+            which is the first thing to check if the board gets an IP yet stays
+            unreachable.
+
+            Deliberately empty by default: credentials are never committed and
+            never live in sdkconfig.defaults. Set this with
+
+                idf.py menuconfig
+
+            and it lands in sdkconfig, which .gitignore excludes.
+
+    config SOFA_WIFI_PASSWORD
+        string "WiFi password"
+        default ""
+        help
+            Passphrase for the SSID above. Leave empty for an open network; the
+            station then uses the OPEN auth threshold regardless of the setting
+            below.
+
+    choice SOFA_WIFI_AUTH_THRESHOLD
+        prompt "Weakest auth mode to accept when scanning"
+        default SOFA_WIFI_AUTH_WPA2_PSK
+        help
+            The access point must advertise at least this strong an auth mode
+            for the station to consider it. Only lower this if your AP uses
+            legacy WPA (or WEP) and the board refuses to join.
+
+        config SOFA_WIFI_AUTH_OPEN
+            bool "OPEN"
+        config SOFA_WIFI_AUTH_WPA_PSK
+            bool "WPA PSK (also accepts WPA2/WPA3 APs)"
+        config SOFA_WIFI_AUTH_WPA2_PSK
+            bool "WPA2 PSK (also accepts WPA3 APs)"
+        config SOFA_WIFI_AUTH_WPA3_PSK
+            bool "WPA3 PSK"
+        config SOFA_WIFI_AUTH_WPA2_WPA3_PSK
+            bool "WPA2/WPA3 PSK"
+    endchoice
+
+    config SOFA_WIFI_RETRY_DELAY_MS
+        int "Delay between WiFi reconnect attempts (ms)"
+        default 2000
+        range 100 60000
+        help
+            After a disconnect the station waits this long and then retries,
+            forever. A control surface that gives up after five tries is not
+            much of a control surface: the board has to come back on its own
+            after a router reboot.
+
+    config SOFA_HTTP_PORT
+        int "HTTP server port"
+        default 80
+        range 1 65535
+        help
+            TCP port the control page and the JSON API listen on. Port 80 lets
+            you browse to a bare http://<ip>/ with no port suffix.
+
+    config SOFA_ENABLE_MDNS
+        bool "Advertise the control page over mDNS (Bonjour)"
+        default y
+        help
+            Publishes the board as <hostname>.local so you can reach it at
+            http://esp32-sofa.local/ instead of hunting for the DHCP address.
+            macOS resolves .local hostnames natively.
+
+            The mDNS component is a managed dependency from the Espressif
+            Component Registry, so the first build needs network access.
+
+    config SOFA_MDNS_HOSTNAME
+        string "mDNS hostname"
+        default "esp32-sofa"
+        depends on SOFA_ENABLE_MDNS
+        help
+            The board answers to "<this>.local". Lowercase letters, digits and
+            hyphens only, and it must not collide with another device on the
+            LAN - change it if you flash a second board.
+
+endmenu

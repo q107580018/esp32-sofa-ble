@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Sofa control</title>
+<style>
+  /*
+   * Materials, not a dashboard theme: dark walnut, undyed linen, and one brass
+   * accent that only ever means "this seat is moving right now".
+   */
+  :root {
+    --walnut: #171310;
+    --panel:  #211b16;
+    --seam:   #3b322a;
+    --linen:  #e6ded1;
+    --fade:   #9a8d7d;
+    --brass:  #c9a227;
+
+    --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    padding: 28px 20px calc(28px + env(safe-area-inset-bottom));
+    background: var(--walnut);
+    color: var(--linen);
+    font: 16px/1.5 var(--sans);
+    display: flex;
+    justify-content: center;
+  }
+
+  main { width: 100%; max-width: 32rem; }
+
+  h1 {
+    margin: 0 0 2px;
+    font: 400 30px/1.1 var(--serif);
+    letter-spacing: 0.01em;
+  }
+
+  .where { margin: 0 0 26px; color: var(--fade); font-size: 14px; }
+
+  /* ---- the sofa itself: the one piece of ornament, and it carries state ---- */
+
+  .sofa { display: block; width: 100%; height: auto; }
+
+  .frame { fill: none; stroke: var(--seam); stroke-width: 1.5; }
+
+  .cushion {
+    fill: var(--panel);
+    stroke: var(--seam);
+    stroke-width: 1.5;
+    transition: fill 180ms ease, stroke 180ms ease;
+  }
+
+  .cushion.moving { fill: var(--brass); stroke: var(--brass); }
+
+  .seatnum {
+    fill: var(--fade);
+    font: 500 13px var(--sans);
+    text-anchor: middle;
+    transition: fill 180ms ease;
+  }
+
+  .seatnum.moving { fill: var(--brass); }
+
+  /* ---- rows ---- */
+
+  .seats { margin: 30px 0 0; border-top: 1px solid var(--seam); }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--seam);
+  }
+
+  .row .name { font-size: 15px; }
+
+  button {
+    font: 500 15px/1 var(--sans);
+    color: var(--linen);
+    background: var(--panel);
+    border: 1px solid var(--seam);
+    border-radius: 8px;
+    padding: 0 18px;
+    min-height: 52px;
+    min-width: 86px;
+    cursor: pointer;
+    touch-action: none;             /* a held button must not turn into a scroll */
+    -webkit-user-select: none;
+    user-select: none;
+    transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+  }
+
+  button:hover:not(:disabled) { border-color: var(--fade); }
+
+  button:active:not(:disabled),
+  button[aria-pressed="true"] {
+    border-color: var(--brass);
+    color: var(--brass);
+  }
+
+  button:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+  button:disabled { opacity: 0.4; cursor: default; }
+
+  /* ---- movement settings ---- */
+
+  .setting {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--seam);
+  }
+
+  .setting p { margin: 0; font-size: 15px; flex: 1 1 12rem; }
+
+  .choice { display: flex; gap: 8px; }
+
+  .choice button[aria-pressed="true"] {
+    background: var(--brass);
+    border-color: var(--brass);
+    color: var(--walnut);
+  }
+
+  .stop-row { padding: 16px 0; border-bottom: 1px solid var(--seam); }
+
+  .stop-row button { width: 100%; }
+
+  .hint { margin: 14px 0 0; color: var(--fade); font-size: 14px; }
+
+  /* ---- state line ---- */
+
+  .state {
+    margin-top: 26px;
+    padding-top: 16px;
+    border-top: 1px solid var(--seam);
+    color: var(--fade);
+    font-size: 14px;
+  }
+
+  .state b { font-weight: 500; color: var(--linen); }
+
+  .problem { color: #d98b6a; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sofa control</h1>
+  <p class="where" id="where">Connecting to the board…</p>
+
+  <svg class="sofa" viewBox="0 0 360 152" role="img" aria-label="A four-seat sofa. A cushion turns brass while that seat is moving.">
+    <rect class="frame" x="30" y="14" width="300" height="56" rx="16"/>
+    <rect class="cushion" data-seat="1" x="36"  y="56" width="66" height="66" rx="10"/>
+    <rect class="cushion" data-seat="2" x="110" y="56" width="66" height="66" rx="10"/>
+    <rect class="cushion" data-seat="3" x="184" y="56" width="66" height="66" rx="10"/>
+    <rect class="cushion" data-seat="4" x="258" y="56" width="66" height="66" rx="10"/>
+    <rect class="frame" x="10"  y="40" width="26" height="82" rx="9"/>
+    <rect class="frame" x="324" y="40" width="26" height="82" rx="9"/>
+    <text class="seatnum" data-seat="1" x="69"  y="144">1</text>
+    <text class="seatnum" data-seat="2" x="143" y="144">2</text>
+    <text class="seatnum" data-seat="3" x="217" y="144">3</text>
+    <text class="seatnum" data-seat="4" x="291" y="144">4</text>
+  </svg>
+
+  <div class="seats">
+    <div class="row">
+      <span class="name">Seat 1</span>
+      <button data-move="1" data-dir="up">Raise</button>
+      <button data-move="1" data-dir="down">Lower</button>
+    </div>
+    <div class="row">
+      <span class="name">Seat 2</span>
+      <button data-move="2" data-dir="up">Raise</button>
+      <button data-move="2" data-dir="down">Lower</button>
+    </div>
+    <div class="row">
+      <span class="name">Seat 3</span>
+      <button data-move="3" data-dir="up">Raise</button>
+      <button data-move="3" data-dir="down">Lower</button>
+    </div>
+    <div class="row">
+      <span class="name">Seat 4</span>
+      <button data-move="4" data-dir="up">Raise</button>
+      <button data-move="4" data-dir="down">Lower</button>
+    </div>
+    <div class="row">
+      <span class="name">All seats</span>
+      <button data-move="all" data-dir="up">Raise</button>
+      <button data-move="all" data-dir="down">Lower</button>
+    </div>
+  </div>
+
+  <div class="setting">
+    <p>When you press a button</p>
+    <div class="choice">
+      <button data-mode="oneshot">Runs on its own</button>
+      <button data-mode="jog">Moves while held</button>
+    </div>
+  </div>
+
+  <div class="setting">
+    <p>Direction</p>
+    <div class="choice">
+      <button data-dirset="forward">Forward</button>
+      <button data-dirset="reverse">Reverse</button>
+    </div>
+  </div>
+
+  <div class="stop-row">
+    <button id="stop">Stop</button>
+  </div>
+
+  <p class="hint" id="hint"></p>
+  <p class="state" id="state">Reading the board…</p>
+</main>
+
+<noscript>
+  <p style="color:#9a8d7d">This page needs JavaScript. Without it, curl the API
+  directly: <code>POST /api/move?seat=1&amp;dir=up</code>.</p>
+</noscript>
+
+<script>
+"use strict";
+
+const SEATS = [1, 2, 3, 4];
+const POLL_MS = 1000;
+const HOLD_MS = 300;          /* keep-alive while a jog button is held */
+
+const el = (sel) => document.querySelector(sel);
+const cushions = [...document.querySelectorAll(".cushion")];
+const seatnums = [...document.querySelectorAll(".seatnum")];
+const moveButtons = [...document.querySelectorAll("[data-move]")];
+const modeButtons = [...document.querySelectorAll("[data-mode]")];
+const dirButtons = [...document.querySelectorAll("[data-dirset]")];
+const stopButton = el("#stop");
+
+let status = null;            /* last /api/status payload */
+let moving = new Set();       /* seats we believe are running right now */
+let stopCount = null;         /* motor_stop_count we have already handled */
+let holding = null;           /* {seat, dir} while a jog press is down */
+let holdTimer = null;
+let note = null;              /* sticky error text */
+let noteIsProblem = false;
+
+/* ---------------------------------------------------------------- requests */
+
+async function api(path, method) {
+  const res = await fetch(path, { method: method || "GET", cache: "no-store" });
+  let body = null;
+  try { body = await res.json(); } catch (_) { /* some errors have no body */ }
+  if (!res.ok) throw new Error((body && body.error) || ("request failed (" + res.status + ")"));
+  return body;
+}
+
+function complain(message) {
+  note = message;
+  noteIsProblem = true;
+  paintState();
+}
+
+function clearNote() {
+  if (note === null) return;
+  note = null;
+  noteIsProblem = false;
+}
+
+/* ------------------------------------------------------------------- press */
+
+function markMoving(seat) {
+  if (seat === "all") SEATS.forEach((n) => moving.add(n));
+  else moving.add(Number(seat));
+  paintSeats();
+}
+
+function release() {
+  clearInterval(holdTimer);
+  holdTimer = null;
+  if (!holding) return;
+  const wasJog = holding.jog;
+  holding = null;
+  /* In one-shot mode the release is meaningless - a second press is what stops
+   * it - and sending stop here would toggle the seat straight back off. */
+  if (wasJog) api("/api/stop", "POST").catch(complain);
+}
+
+function press(seat, dir, jog, event) {
+  if (event) event.preventDefault();
+  if (!status || !status.link.ready) return;
+
+  api("/api/move?seat=" + seat + "&dir=" + dir, "POST")
+    .then(() => {
+      clearNote();
+      markMoving(seat);
+      if (jog) {
+        /* Keep the firmware's hold watchdog fed for as long as the button is
+         * down. If this stops arriving - tab closed, WiFi dropped - the board
+         * releases the seat on its own. */
+        holding = { seat, dir, jog };
+        holdTimer = setInterval(() => {
+          api("/api/hold", "POST").catch(() => release());
+        }, HOLD_MS);
+      }
+    })
+    .catch(complain);
+}
+
+/* A release anywhere, or the page going away, must end a held jog. */
+window.addEventListener("pointerup", release);
+window.addEventListener("pointercancel", release);
+window.addEventListener("blur", release);
+document.addEventListener("visibilitychange", () => { if (document.hidden) release(); });
+
+moveButtons.forEach((button) => {
+  button.addEventListener("pointerdown", (event) => {
+    const jog = status && status.movement.mode === "jog";
+    press(button.dataset.move, button.dataset.dir, jog, event);
+  });
+  /* Not just for the mouse: a keyboard Enter still has to move the seat. */
+  button.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (event.repeat) return;
+    event.preventDefault();
+    press(button.dataset.move, button.dataset.dir, false, event);
+  });
+});
+
+stopButton.addEventListener("click", () => {
+  release();
+  api("/api/stop", "POST")
+    .then(() => { moving.clear(); clearNote(); paintSeats(); })
+    .catch(complain);
+});
+
+modeButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    api("/api/mode?value=" + button.dataset.mode, "POST").then(clearNote).catch(complain);
+  });
+});
+
+dirButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    api("/api/dir?value=" + button.dataset.dirset, "POST").then(clearNote).catch(complain);
+  });
+});
+
+/* ------------------------------------------------------------------ render */
+
+function paintSeats() {
+  const lit = moving.size > 0;
+  [...cushions, ...seatnums].forEach((node) => {
+    node.classList.toggle("moving", lit && moving.has(Number(node.dataset.seat)));
+  });
+}
+
+function paintState() {
+  const line = el("#state");
+  const hint = el("#hint");
+  const ready = status && status.link.ready;
+  const jog = status && status.movement.mode === "jog";
+
+  moveButtons.forEach((b) => { b.disabled = !ready; });
+  modeButtons.forEach((b) => { b.disabled = !ready; });
+  dirButtons.forEach((b) => { b.disabled = !ready; });
+  stopButton.disabled = !ready;
+
+  modeButtons.forEach((b) => {
+    b.setAttribute("aria-pressed", String(status && status.movement.mode === b.dataset.mode));
+  });
+  dirButtons.forEach((b) => {
+    b.setAttribute("aria-pressed", String(status && status.movement.direction === b.dataset.dirset));
+  });
+
+  hint.textContent = !ready ? ""
+    : (jog ? "Hold a button and the seat moves. Let go, or press Stop, and it stops."
+           : "Tap a button and the seat runs to the end stop. Tap the same button again, or press Stop, to end it early.");
+
+  if (note) {
+    line.className = noteIsProblem ? "state problem" : "state";
+    line.textContent = note;
+    return;
+  }
+
+  line.className = "state";
+  if (!status) { line.textContent = "Reading the board…"; return; }
+
+  /* Prose, not a row of symbols: this line is the only place the board
+   * explains itself, so it should read like a sentence. */
+  let text = stateSentence(status.link.state);
+  if (status.link.ready) {
+    text += " Sofa " + status.link.peer + ".";
+  }
+  if (status.movement.held) {
+    text += " Holding " + status.movement.held_button.replace(/-/g, " ") + ".";
+  }
+  text += status.wifi.connected
+    ? " WiFi " + status.wifi.ip + ", " + status.wifi.rssi_dbm + " dBm."
+    : " No WiFi link.";
+  line.textContent = text;
+}
+
+function stateSentence(state) {
+  switch (state) {
+    case "boot":        return "Starting up.";
+    case "scanning":    return "Looking for the sofa.";
+    case "connecting":  return "Connecting to the sofa.";
+    case "discovering": return "Reading the sofa's controls.";
+    case "ready":       return "Ready.";
+    case "retry-wait":  return "Lost the sofa. Trying again.";
+    default:            return "Unknown link state.";
+  }
+}
+
+function paintLocation(s) {
+  el("#where").textContent = s.wifi.connected
+    ? "http://" + (s.server.mdns || s.wifi.ip) + "/"
+    : "The board has no WiFi link yet.";
+}
+
+/* ------------------------------------------------------------------- poll */
+
+async function poll() {
+  try {
+    const next = await api("/api/status");
+
+    /* The sofa only ever tells us about motors *stopping*, never about starts,
+     * so a seat indicator is cleared from the stop notification rather than
+     * from a timeout. */
+    if (stopCount !== null && next.link.motor_stop_count !== stopCount) {
+      const motor = next.link.last_motor;
+      if (motor === 5) moving.clear();
+      else if (motor >= 1 && motor <= 4) moving.delete(motor);
+      paintSeats();
+    }
+    stopCount = next.link.motor_stop_count;
+
+    status = next;
+    paintLocation(next);
+    paintState();
+  } catch (err) {
+    complain("Cannot reach the board: " + err.message);
+  }
+}
+
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>

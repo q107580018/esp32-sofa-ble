@@ -1,0 +1,13 @@
+## IDF Component Manager manifest.
+##
+## Dependencies declared here are added to THIS component's requirements
+## automatically by the component manager -- do not repeat them in
+## PRIV_REQUIRES in CMakeLists.txt, or the build complains about duplicates in
+## some IDF versions.
+dependencies:
+  ## mDNS/Bonjour advertisement: http://esp32-sofa.local/ on macOS.
+  espressif/mdns: "^1.0.3"
+
+  ## Required IDF version
+  idf:
+    version: ">=5.0"

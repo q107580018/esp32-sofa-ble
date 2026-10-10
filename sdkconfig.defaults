@@ -1,0 +1,70 @@
+# Target: classic ESP32 (ESP32-D0WD-V3, rev v3.1)
+CONFIG_IDF_TARGET="esp32"
+
+# Board has 4 MB flash. The IDF default (2 MB) makes the bootloader warn
+# "Detected size(4096k) larger than ... binary image header(2048k)" and halves
+# the usable app partition.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# The IDF default partition table gives the app only 1 MB. A NimBLE central is
+# a few hundred KB plus the console, so the headroom matters here. NOTE: like
+# every other default this only applies when sdkconfig is absent; an already
+# generated sdkconfig keeps whatever table it recorded.
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# Logging
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# --- Bluetooth: NimBLE only -------------------------------------------------
+# The classic ESP32 controller can do BLE, BT-Classic or both; this firmware
+# only ever talks BLE, and NimBLE is much smaller than Bluedroid.
+# These four lines are the same set the bundled examples use
+# (examples/bluetooth/nimble/blecent/sdkconfig.defaults).
+CONFIG_BT_ENABLED=y
+CONFIG_BTDM_CTRL_MODE_BLE_ONLY=y
+CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY=n
+CONFIG_BTDM_CTRL_MODE_BTDM=n
+CONFIG_BT_BLUEDROID_ENABLED=n
+CONFIG_BT_NIMBLE_ENABLED=y
+
+# This board is only ever a central: it scans, connects and writes. Dropping the
+# peripheral/broadcaster half (and with it the GATT server) is free size.
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=n
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
+
+# --- IRAM, the scarce resource ----------------------------------------------
+# WiFi and NimBLE together overflow IRAM0 with the stock settings - the link
+# fails with "IRAM0 segment data does not fit" (see AGENTS.md). Both WiFi
+# optimisations below exist to keep code in IRAM for latency; moving it back to
+# flash is the price of running the radio for BLE at the same time. The board is
+# mains-powered and the workload is a 2-byte write every 50 ms, so the trade is
+# easily worth it.
+CONFIG_ESP_WIFI_IRAM_OPT=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n
+CONFIG_ESP_WIFI_SLP_IRAM_OPT=n
+
+# The console REPL shares UART0 with the log. That is the normal ESP-IDF
+# arrangement and it is what makes the board drivable from a terminal.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+# --- esp32-sofa-ble defaults ------------------------------------------------
+CONFIG_SOFA_DEVICE_NAME_PREFIX="Sofa_wwt"
+CONFIG_SOFA_TARGET_ADDR="ADDR_ANY"
+CONFIG_SOFA_CONNECT_TIMEOUT_MS=30000
+CONFIG_SOFA_SCAN_INTERVAL_MS=100
+CONFIG_SOFA_SCAN_WINDOW_MS=30
+CONFIG_SOFA_RETRY_DELAY_MS=3000
+CONFIG_SOFA_HANDSHAKE=y
+CONFIG_SOFA_JOG_REPEAT_MS=50
+CONFIG_SOFA_ANNOUNCE_NEW_DEVICES=y
+CONFIG_SOFA_STATUS_LED_GPIO=2
+CONFIG_SOFA_HOLD_TIMEOUT_MS=800
+
+# --- WiFi + HTTP control surface --------------------------------------------
+# NOTE: the SSID and password are deliberately NOT here -- they belong in your
+# local sdkconfig (git-ignored), set via `idf.py menuconfig`.
+CONFIG_SOFA_WIFI_AUTH_WPA2_PSK=y
+CONFIG_SOFA_WIFI_RETRY_DELAY_MS=2000
+CONFIG_SOFA_HTTP_PORT=80
+CONFIG_SOFA_ENABLE_MDNS=y
+CONFIG_SOFA_MDNS_HOSTNAME="esp32-sofa"
